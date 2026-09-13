@@ -1,0 +1,9 @@
+pandas
+numpy
+pyspark
+tensorflow
+tensorflow-recommenders
+scikit-learn
+fastapi
+uvicorn
+redis
