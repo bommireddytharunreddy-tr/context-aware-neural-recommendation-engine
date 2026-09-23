@@ -5,3 +5,8 @@ __pycache__/
 data/raw/*
 data/processed/*
 .ipynb_checkpoints/
+# Airflow runtime files
+airflow/logs/
+airflow/config/
+airflow/plugins/
+airflow/.env
