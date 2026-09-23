@@ -1,27 +1,17 @@
-import sys
 from pathlib import Path
+import sys
 
 from fastapi import FastAPI, HTTPException
-
-
-# ---------------------------------------------------------
-# Add API directory to Python import path
-# ---------------------------------------------------------
+from pydantic import BaseModel
 
 API_DIR = Path(__file__).resolve().parent
-
 sys.path.append(str(API_DIR))
-
 
 from redis_store import (
     create_redis_client,
     get_recommendations
 )
 
-
-# ---------------------------------------------------------
-# FastAPI Application
-# ---------------------------------------------------------
 
 app = FastAPI(
     title="Context-Aware Neural Recommendation Engine",
@@ -30,30 +20,30 @@ app = FastAPI(
 )
 
 
-# ---------------------------------------------------------
-# Redis Connection
-# ---------------------------------------------------------
-
 redis_client = create_redis_client()
 
 
-# ---------------------------------------------------------
-# Root Endpoint
-# ---------------------------------------------------------
+class RecommendationItem(BaseModel):
+    item_id: int
+    score: float
+
+
+class RecommendationResponse(BaseModel):
+    user_id: int
+    recommendations: list[RecommendationItem]
+
 
 @app.get("/")
 def root():
-
     return {
         "message": "Recommendation API is running"
     }
 
 
-# ---------------------------------------------------------
-# Recommendation Endpoint
-# ---------------------------------------------------------
-
-@app.get("/recommendations/{user_id}")
+@app.get(
+    "/recommendations/{user_id}",
+    response_model=RecommendationResponse
+)
 def recommendations(user_id: int):
 
     result = get_recommendations(
@@ -62,10 +52,20 @@ def recommendations(user_id: int):
     )
 
     if result is None:
-
         raise HTTPException(
             status_code=404,
             detail="No recommendations found for this user"
         )
 
-    return result
+    recommendation_items = [
+        RecommendationItem(
+            item_id=item_id,
+            score=1.0
+        )
+        for item_id in result["items"]
+    ]
+
+    return RecommendationResponse(
+        user_id=result["user_id"],
+        recommendations=recommendation_items
+    )
