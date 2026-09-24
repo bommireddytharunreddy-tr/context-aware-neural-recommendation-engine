@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/src/model"
+        "${workspaceFolder}/src/model",
+        "${workspaceFolder}/src/api"
     ]
 }
