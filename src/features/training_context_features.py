@@ -16,177 +16,87 @@ def create_spark_session():
 
 
 def load_transactions(spark):
-
     return (
         spark.read
         .option("header", True)
         .option("inferSchema", True)
-        .csv(
-            f"{DATA_DIR}/transactions_train.csv"
-        )
-        .withColumn(
-            "t_dat",
-            F.to_date("t_dat")
-        )
+        .csv(f"{DATA_DIR}/transactions_train.csv")
+        .withColumn("t_dat", F.to_date("t_dat"))
     )
 
 
-def create_training_context_features(
-    transactions
-):
+def create_user_context_features(transactions):
+    """
+    Create context features at user level.
+    These features can be used for both positive and negative interactions.
+    """
 
-    # --------------------------------------------------
-    # Time-based features
-    # --------------------------------------------------
-
-    context_features = (
+    user_features = (
         transactions
-        .withColumn(
-            "purchase_year",
-            F.year("t_dat")
-        )
-        .withColumn(
-            "purchase_month",
-            F.month("t_dat")
-        )
-        .withColumn(
-            "purchase_day",
-            F.dayofmonth("t_dat")
-        )
-        .withColumn(
-            "purchase_day_of_week",
-            F.dayofweek("t_dat")
-        )
-    )
-
-    # --------------------------------------------------
-    # Customer-level features
-    # --------------------------------------------------
-
-    customer_features = (
-        context_features
         .groupBy("customer_id")
         .agg(
-            F.count("*").alias(
-                "customer_total_purchases"
-            ),
-            F.avg("price").alias(
-                "customer_avg_price"
-            ),
-            F.max("t_dat").alias(
-                "customer_last_purchase_date"
-            )
+            F.count("*").alias("customer_total_purchases"),
+            F.avg("price").alias("customer_avg_price")
         )
     )
 
-    # --------------------------------------------------
-    # Item-level features
-    # --------------------------------------------------
+    return user_features
+
+
+def create_item_context_features(transactions):
+    """
+    Create context features at item level.
+    These features can be used for both positive and negative interactions.
+    """
 
     item_features = (
-        context_features
+        transactions
         .groupBy("article_id")
         .agg(
-            F.count("*").alias(
-                "item_total_purchases"
-            ),
-            F.avg("price").alias(
-                "item_avg_price"
-            ),
-            F.max("t_dat").alias(
-                "item_last_purchase_date"
-            )
+            F.count("*").alias("item_total_purchases"),
+            F.avg("price").alias("item_avg_price")
         )
     )
 
-    # --------------------------------------------------
-    # Join customer + item features
-    # --------------------------------------------------
+    return item_features
 
-    training_features = (
-        context_features
-        .join(
-            customer_features,
-            on="customer_id",
-            how="left"
-        )
-        .join(
-            item_features,
-            on="article_id",
-            how="left"
-        )
-    )
 
-    # --------------------------------------------------
-    # Select model-relevant contextual features
-    # --------------------------------------------------
+def create_training_context_features(transactions):
+    """
+    Create separate user-level and item-level context features.
+    """
 
-    training_features = (
-        training_features
-        .select(
-            "customer_id",
-            "article_id",
-            "t_dat",
+    user_features = create_user_context_features(transactions)
+    item_features = create_item_context_features(transactions)
 
-            "purchase_year",
-            "purchase_month",
-            "purchase_day",
-            "purchase_day_of_week",
-
-            "customer_total_purchases",
-            "customer_avg_price",
-
-            "item_total_purchases",
-            "item_avg_price"
-        )
-    )
-
-    return training_features
+    return user_features, item_features
 
 
 if __name__ == "__main__":
-
     spark = create_spark_session()
 
     try:
+        transactions = load_transactions(spark)
 
-        transactions = load_transactions(
-            spark
+        user_features, item_features = create_training_context_features(
+            transactions
         )
 
-        training_features = (
-            create_training_context_features(
-                transactions
-            )
-        )
+        print("\n=== USER CONTEXT FEATURES ===")
+        user_features.printSchema()
+        user_features.show(10, truncate=False)
 
-        print(
-            "\n=== TRAINING CONTEXT FEATURES ==="
-        )
+        print("\n=== ITEM CONTEXT FEATURES ===")
+        item_features.printSchema()
+        item_features.show(10, truncate=False)
 
-        training_features.printSchema()
+        print("\n=== USER FEATURE COUNT ===")
+        print(user_features.count())
 
-        print(
-            "\n=== FEATURE SAMPLE ==="
-        )
+        print("\n=== ITEM FEATURE COUNT ===")
+        print(item_features.count())
 
-        training_features.show(
-            10,
-            truncate=False
-        )
-
-        print(
-            "\n=== FEATURE COUNT ==="
-        )
-
-        print(
-            training_features.count()
-        )
-
-        print(
-            "\n=== TRAINING CONTEXT FEATURE TEST PASSED ==="
-        )
+        print("\n=== TRAINING CONTEXT FEATURE TEST PASSED ===")
 
     finally:
-
         spark.stop()
