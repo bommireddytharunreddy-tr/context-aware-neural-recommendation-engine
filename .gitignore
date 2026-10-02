@@ -10,3 +10,5 @@ airflow/logs/
 airflow/config/
 airflow/plugins/
 airflow/.env
+# Trained model artifacts
+trained_models/
