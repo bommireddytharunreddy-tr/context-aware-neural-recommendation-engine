@@ -1,71 +1,89 @@
+
 from pathlib import Path
 import sys
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
-API_DIR = Path(__file__).resolve().parent
-sys.path.append(str(API_DIR))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-from redis_store import (
-    create_redis_client,
-    get_recommendations
-)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.retrieval.user_to_item_retriever import UserToItemRetriever
 
 
 app = FastAPI(
     title="Context-Aware Neural Recommendation Engine",
-    description="Recommendation API using Redis",
-    version="1.0.0"
+    description="H&M article recommendations using user embeddings and FAISS retrieval",
+    version="1.1.0",
 )
 
-
-redis_client = create_redis_client()
+# Load the encoder and item index once when the API process starts.
+recommender = UserToItemRetriever()
 
 
 class RecommendationItem(BaseModel):
-    item_id: int
-    score: float
+    article_id: int
+    item_index: int
+    similarity: float
 
 
 class RecommendationResponse(BaseModel):
-    user_id: int
+    customer_id: str
     recommendations: list[RecommendationItem]
 
 
 @app.get("/")
 def root():
     return {
-        "message": "Recommendation API is running"
+        "message": "Recommendation API is running",
+        "status": "ready",
     }
 
 
 @app.get(
-    "/recommendations/{user_id}",
-    response_model=RecommendationResponse
+    "/recommendations/{customer_id}",
+    response_model=RecommendationResponse,
 )
-def recommendations(user_id: int):
+def recommendations(
+    customer_id: str,
+    top_k: int = Query(default=10, ge=1, le=100),
+):
+    customer_id = customer_id.strip()
 
-    result = get_recommendations(
-        redis_client,
-        user_id
-    )
+    if not customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Customer ID cannot be empty",
+        )
 
-    if result is None:
+    try:
+        results = recommender.recommend(
+            customer_id=customer_id,
+            top_k=top_k,
+        )
+    except KeyError:
         raise HTTPException(
             status_code=404,
-            detail="No recommendations found for this user"
-        )
+            detail="Customer ID was not found in the user-context lookup",
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
-    recommendation_items = [
-        RecommendationItem(
-            item_id=item_id,
-            score=1.0
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail="No recommendations could be generated for this customer",
         )
-        for item_id in result["items"]
-    ]
 
     return RecommendationResponse(
-        user_id=result["user_id"],
-        recommendations=recommendation_items
+        customer_id=customer_id,
+        recommendations=[
+            RecommendationItem(**item)
+            for item in results
+        ],
     )
